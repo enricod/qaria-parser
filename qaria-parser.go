@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 /**
@@ -33,6 +36,11 @@ func (m Misura) ToCSV() string {
 	return strconv.Itoa(m.StazioneID) + "," + m.Inq + "," + m.Data + "," + strconv.FormatFloat(m.Valore, 'g', 3, 64)
 }
 
+type DbConf struct {
+	User     string
+	Password string
+}
+
 // Valori struct per contenere i dati letti dal file html
 type Valori struct {
 	Inq    string
@@ -48,6 +56,8 @@ func main() {
 
 	log.Printf(fmt.Sprintf("directory lettura = %s", *dir))
 
+	dbconf := DbConf{User: "root", Password: "root"}
+
 	files, err := filepath.Glob(*dir + "/*.html")
 	if err != nil {
 		log.Fatal(err)
@@ -57,6 +67,7 @@ func main() {
 		misure := leggiFileEEstraiDati(f)
 		linee := misureToCSV(misure)
 		writeLines(linee, strings.Replace(f, ".html", ".txt", -1))
+		salvaInDb(dbconf, misure)
 
 	}
 }
@@ -69,6 +80,7 @@ func misureToCSV(misuras []Misura) []string {
 	return res
 }
 
+// writeLine scrive in file CSV le misure
 func writeLines(lines []string, path string) error {
 	file, err := os.Create(path)
 	if err != nil {
@@ -83,7 +95,7 @@ func writeLines(lines []string, path string) error {
 	return w.Flush()
 }
 
-// EstraiStringaDati torna un array di stringhe nella forma "PM10 =  [45,47,91,86,68,25,23,28,33,26 ]"
+// estraiStringaDati torna un array di stringhe nella forma "PM10 =  [45,47,91,86,68,25,23,28,33,26 ]"
 func estraiStringaDati(s string) []string {
 	var res []string
 	var i int
@@ -214,6 +226,7 @@ func convertiData(dataHTML string) string {
 	return "2017" + mese + pezzi[0]
 }
 
+// leggiFileEEstraiDati legge file HTML e estrae un array di Misura
 func leggiFileEEstraiDati(filename string) []Misura {
 	var res []Misura
 	log.Println("lettura di ", filename)
@@ -230,17 +243,8 @@ func leggiFileEEstraiDati(filename string) []Misura {
 
 	/*
 		var dati_NO2 =  [137,123,111,113,94,71,90,84,101,89 ] ;
-		var colors_NO2 =  ['#ffde33' ,'#ffde33' ,'#ffde33' ,'#ffde33' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#ffde33' ,'#40b38c'  ] ;
-
-
 		var dati_CO =  [1,1,1.4,1.3,1.2,1.1,1.1,1.2,1.1,1.3 ] ;
-		var colors_CO =  ['#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c'  ] ;
-
-
 		var dati_C6H6 =  [0.5,0.5,0.8,2.1,1.5,0.2,1.4,1.6,0.7,1.2 ] ;
-		var colors_C6H6 =  ['#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c' ,'#40b38c'  ] ;
-
-
 		// tick Array
 		var ticks = [ '<b>31<br />Ott</b>','<b>1<br />Nov</b>','<b>2<br />Nov</b>','<b>3<br />Nov</b>','<b>4<br />Nov</b>','<b>5<br />Nov</b>','<b>6<br />Nov</b>','<b>7<br />Nov</b>','<b>8<br />Nov</b>','<b>9<br />Nov</b>' ] ;   // ['-10', '-9', '-8',];
 	*/
@@ -258,4 +262,50 @@ func leggiFileEEstraiDati(filename string) []Misura {
 		}
 	}
 	return res
+}
+
+func salvaInDb(dbconf DbConf, misure []Misura) {
+	if db, err := sql.Open("mysql",
+		dbconf.User+":"+
+			dbconf.Password+
+			"@tcp(127.0.0.1:3306)/qaria"); err != nil {
+		log.Fatal(err)
+	} else {
+
+		// controlliamo se esiste già riga per questi dati
+		stmtOut, err := db.Prepare("SELECT count(*) as totale FROM misura WHERE inquinante = ? AND stazioneId=? AND dataStr=?")
+		if err != nil {
+			panic(err.Error()) // proper error handling instead of panic in your app
+		}
+
+		defer stmtOut.Close()
+		for _, m := range misure {
+			var totale int
+			err2 := stmtOut.QueryRow(m.Inq, m.StazioneID, m.Data).Scan(&totale) // WHERE number = 13
+			if err2 != nil {
+				panic(err2.Error()) // proper error handling instead of panic in your app
+			}
+			if totale > 0 {
+				log.Printf("dati già presenti, salto. %v\n", m.ToCSV())
+			} else {
+				if stmt, err2 := db.Prepare("INSERT INTO misura(inquinante, valore, stazioneId, dataStr) VALUES(?, ?, ?, ?)"); err2 != nil {
+					log.Fatal(err2)
+				} else {
+					for _, m := range misure {
+						if res, err3 := stmt.Exec(m.Inq, m.Valore, m.StazioneID, m.Data); err3 != nil {
+							rowCnt, err4 := res.RowsAffected()
+							if err4 != nil {
+								log.Fatal(err)
+							} else {
+								log.Printf("dati inseriti %v\n", rowCnt)
+							}
+						}
+					}
+				}
+			}
+
+		}
+
+		defer db.Close()
+	}
 }
