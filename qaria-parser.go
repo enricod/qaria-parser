@@ -36,6 +36,7 @@ func (m Misura) ToCSV() string {
 	return strconv.Itoa(m.StazioneID) + "," + m.Inq + "," + m.Data + "," + strconv.FormatFloat(m.Valore, 'g', 3, 64)
 }
 
+// DbConf dati configurazione per accesso a database
 type DbConf struct {
 	User     string
 	Password string
@@ -50,7 +51,7 @@ type Valori struct {
 
 func main() {
 	// directory dove salvare il file html
-	dir := flag.String("d", ".", "outputdir")
+	dir := flag.String("d", "/home/enrico/Documents/qaria-letture", "outputdir")
 
 	flag.Parse()
 
@@ -58,7 +59,7 @@ func main() {
 
 	dbconf := DbConf{User: "root", Password: "root"}
 
-	files, err := filepath.Glob(*dir + "/*.html")
+	files, err := filepath.Glob(*dir + "/2017-11-20T09:57:56+01:00_661.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -232,7 +233,7 @@ func leggiFileEEstraiDati(filename string) []Misura {
 	log.Println("lettura di ", filename)
 	re := regexp.MustCompile("[0-9]+")
 	matchSlice := re.FindAllString(filename, -1)
-	stazID, _ := strconv.Atoi(matchSlice[1])
+	stazID, _ := strconv.Atoi(matchSlice[8])
 	buf := bytes.NewBuffer(nil)
 
 	f, _ := os.Open(filename) // Error handling elided for brevity.
@@ -281,6 +282,7 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 		defer stmtOut.Close()
 		for _, m := range misure {
 			var totale int
+			// log.Printf("StazioneID: %s", strconv.Itoa(m.StazioneID))
 			err2 := stmtOut.QueryRow(m.Inq, m.StazioneID, m.Data).Scan(&totale) // WHERE number = 13
 			if err2 != nil {
 				panic(err2.Error()) // proper error handling instead of panic in your app
@@ -291,16 +293,19 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 				if stmt, err2 := db.Prepare("INSERT INTO misura(inquinante, valore, stazioneId, dataStr) VALUES(?, ?, ?, ?)"); err2 != nil {
 					log.Fatal(err2)
 				} else {
-					for _, m := range misure {
-						if res, err3 := stmt.Exec(m.Inq, m.Valore, m.StazioneID, m.Data); err3 != nil {
-							rowCnt, err4 := res.RowsAffected()
-							if err4 != nil {
-								log.Fatal(err)
-							} else {
-								log.Printf("dati inseriti %v\n", rowCnt)
-							}
+					//for _, m := range misure {
+					if res, err3 := stmt.Exec(m.Inq, m.Valore, m.StazioneID, m.Data); err3 != nil {
+						log.Fatal(err3)
+					} else {
+						_, err4 := res.RowsAffected()
+						if err4 != nil {
+							log.Fatal(err)
+						} else {
+							log.Printf("dati inseriti %v\n", m.ToCSV())
 						}
+
 					}
+					//}
 				}
 			}
 
