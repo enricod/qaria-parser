@@ -59,7 +59,7 @@ func main() {
 
 	dbconf := DbConf{User: "root", Password: "root"}
 
-	files, err := filepath.Glob(*dir + "/2017-11-20T09:57:56+01:00_661.html")
+	files, err := filepath.Glob(*dir + "/*.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -220,11 +220,11 @@ func convertiData(dataHTML string) string {
 		mese = "12"
 	}
 
-	// FIXME non posso schiantare 2017!!
+	// FIXME non posso schiantare 2018!!
 	if len(pezzi[0]) < 2 {
-		return "2017" + mese + "0" + pezzi[0]
+		return "2018" + mese + "0" + pezzi[0]
 	}
-	return "2017" + mese + pezzi[0]
+	return "2018" + mese + pezzi[0]
 }
 
 // leggiFileEEstraiDati legge file HTML e estrae un array di Misura
@@ -293,7 +293,6 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 				if stmt, err2 := db.Prepare("INSERT INTO misura(inquinante, valore, stazioneId, dataStr) VALUES(?, ?, ?, ?)"); err2 != nil {
 					log.Fatal(err2)
 				} else {
-					//for _, m := range misure {
 					if res, err3 := stmt.Exec(m.Inq, m.Valore, m.StazioneID, m.Data); err3 != nil {
 						log.Fatal(err3)
 					} else {
@@ -305,7 +304,6 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 						}
 
 					}
-					//}
 				}
 			}
 
