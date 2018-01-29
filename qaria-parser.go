@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -188,7 +189,7 @@ func estraiStringaDate(s string) string {
 	return strings.Trim(res, " ")
 }
 
-// nel file html, la data ha la forma 1 Ott
+// convertiData : nel file html, la data ha la forma 1 Ott
 // dobbiamo convertirla in 20161201
 func convertiData(dataHTML string) string {
 	pezzi := strings.Split(dataHTML, " ")
@@ -220,11 +221,11 @@ func convertiData(dataHTML string) string {
 		mese = "12"
 	}
 
-	// FIXME non posso schiantare 2018!!
+	currentTime := time.Now().Local()
 	if len(pezzi[0]) < 2 {
-		return "2018" + mese + "0" + pezzi[0]
+		return currentTime.Format("2006") + mese + "0" + pezzi[0]
 	}
-	return "2018" + mese + pezzi[0]
+	return currentTime.Format("2006") + mese + pezzi[0]
 }
 
 // leggiFileEEstraiDati legge file HTML e estrae un array di Misura
@@ -302,13 +303,10 @@ func salvaInDb(dbconf DbConf, misure []Misura) {
 						} else {
 							log.Printf("dati inseriti %v\n", m.ToCSV())
 						}
-
 					}
 				}
 			}
-
 		}
-
 		defer db.Close()
 	}
 }
